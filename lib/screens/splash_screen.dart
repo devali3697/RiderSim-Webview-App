@@ -21,7 +21,8 @@ class RiderSimSplashScreen extends StatefulWidget {
       _RiderSimSplashScreenState();
 }
 
-class _RiderSimSplashScreenState extends State<RiderSimSplashScreen>
+class _RiderSimSplashScreenState
+    extends State<RiderSimSplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
@@ -54,18 +55,12 @@ class _RiderSimSplashScreenState extends State<RiderSimSplashScreen>
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness:
-        Brightness.light,
-        statusBarBrightness:
-        Brightness.dark,
-        systemNavigationBarColor:
-        Colors.transparent,
-        systemNavigationBarDividerColor:
-        Colors.transparent,
-        systemNavigationBarIconBrightness:
-        Brightness.light,
-        systemNavigationBarContrastEnforced:
-        false,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarContrastEnforced: false,
       ),
     );
 
@@ -250,8 +245,9 @@ class _RiderSimSplashScreenState extends State<RiderSimSplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-      const Color(0xFF120000),
+      backgroundColor: const Color(
+        0xFF120000,
+      ),
       extendBody: true,
       extendBodyBehindAppBar: true,
       body: SizedBox.expand(
@@ -331,8 +327,7 @@ class _RiderSimSplashScreenState extends State<RiderSimSplashScreen>
                     width: width,
                     height: height,
                     fit: BoxFit.cover,
-                    alignment:
-                    Alignment.center,
+                    alignment: Alignment.center,
                     filterQuality:
                     FilterQuality.medium,
                     gaplessPlayback: true,
@@ -345,20 +340,16 @@ class _RiderSimSplashScreenState extends State<RiderSimSplashScreen>
 
                 IgnorePointer(
                   child: Container(
-                    decoration:
-                    BoxDecoration(
-                      gradient:
-                      LinearGradient(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
                         begin:
                         Alignment.topCenter,
-                        end:
-                        const Alignment(
+                        end: const Alignment(
                           0,
                           -0.15,
                         ),
                         colors: [
-                          Colors.black
-                              .withOpacity(
+                          Colors.black.withOpacity(
                             0.20,
                           ),
                           Colors.transparent,
@@ -374,30 +365,22 @@ class _RiderSimSplashScreenState extends State<RiderSimSplashScreen>
 
                 Positioned(
                   top: logoTop,
-                  left:
-                  width * 0.15,
-                  right:
-                  width * 0.15,
+                  left: width * 0.15,
+                  right: width * 0.15,
                   height:
                   logoWidth * 0.78,
                   child: IgnorePointer(
-                    child:
-                    DecoratedBox(
-                      decoration:
-                      BoxDecoration(
-                        gradient:
-                        RadialGradient(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
                           colors: [
-                            brandRed
-                                .withOpacity(
+                            brandRed.withOpacity(
                               0.15,
                             ),
-                            brandRed
-                                .withOpacity(
+                            brandRed.withOpacity(
                               0.04,
                             ),
-                            Colors
-                                .transparent,
+                            Colors.transparent,
                           ],
                           stops: const [
                             0.0,
@@ -421,12 +404,10 @@ class _RiderSimSplashScreenState extends State<RiderSimSplashScreen>
                   child: FadeTransition(
                     opacity:
                     _logoOpacity,
-                    child:
-                    SlideTransition(
+                    child: SlideTransition(
                       position:
                       _logoSlide,
-                      child:
-                      ScaleTransition(
+                      child: ScaleTransition(
                         scale:
                         _logoScale,
                         child: Center(
@@ -462,12 +443,9 @@ class _RiderSimSplashScreenState extends State<RiderSimSplashScreen>
                 // ==============================
 
                 Positioned(
-                  top:
-                  headlineTop,
-                  left:
-                  width * 0.055,
-                  right:
-                  width * 0.055,
+                  top: headlineTop,
+                  left: width * 0.055,
+                  right: width * 0.055,
                   child: Column(
                     mainAxisSize:
                     MainAxisSize.min,
@@ -551,8 +529,7 @@ class _RiderSimSplashScreenState extends State<RiderSimSplashScreen>
                           Alignment
                               .bottomCenter,
                           colors: [
-                            Colors
-                                .transparent,
+                            Colors.transparent,
                             Colors.black
                                 .withOpacity(
                               0.12,

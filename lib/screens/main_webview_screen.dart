@@ -5,8 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+
+import '../services/connectivity_service.dart';
+import '../services/url_handler_service.dart';
+
+import '../widgets/app_dialogs.dart';
+import '../widgets/web_loading_bar.dart';
+
+import 'error_screen.dart';
+import 'offline_screen.dart';
 
 class MainWebViewScreen extends StatefulWidget {
   const MainWebViewScreen({
@@ -20,102 +27,195 @@ class MainWebViewScreen extends StatefulWidget {
 
 class _MainWebViewScreenState extends State<MainWebViewScreen>
     with WidgetsBindingObserver {
-  static const String _homeUrl = 'https://www.ridersim.com/';
+  // ============================================================
+  // CONSTANTS
+  // ============================================================
 
-  static const Color _brandRed = Color(0xFFEE0018);
-  static const Color _dark = Color(0xFF080808);
-  static const Color _gray = Color(0xFF68707B);
+  static const String _homeUrl =
+      'https://www.ridersim.com/';
+
+  static const Color _brandRed =
+  Color(0xFFEE0018);
+
+  // ============================================================
+  // WEBVIEW
+  // ============================================================
 
   InAppWebViewController? _webViewController;
 
-  late final PullToRefreshController _pullToRefreshController;
-  late final InternetConnection _internetConnection;
+  late final PullToRefreshController
+  _pullToRefreshController;
 
-  StreamSubscription<InternetStatus>? _internetSubscription;
+  // ============================================================
+  // CONNECTIVITY
+  // ============================================================
+
+  StreamSubscription<bool>?
+  _internetSubscription;
+
+  // ============================================================
+  // TIMEOUT
+  // ============================================================
 
   Timer? _pageTimeoutTimer;
 
+  // ============================================================
+  // STATE
+  // ============================================================
+
   bool _isOffline = false;
+
   bool _initialPageVisible = false;
+
   bool _hasPageError = false;
+
   bool _isLoading = true;
+
   bool _isRetrying = false;
+
   bool _exitDialogShowing = false;
 
   int _progress = 0;
 
   String? _errorTitle;
+
   String? _errorDescription;
 
-  WebUri? _currentUrl;
+  // ============================================================
+  // WEBVIEW SETTINGS
+  // ============================================================
 
-  final InAppWebViewSettings _webSettings = InAppWebViewSettings(
+  final InAppWebViewSettings _webSettings =
+  InAppWebViewSettings(
+    // Navigation interception.
     useShouldOverrideUrlLoading: true,
+
+    // Downloads.
     useOnDownloadStart: true,
 
+    // JavaScript.
     javaScriptEnabled: true,
-    javaScriptCanOpenWindowsAutomatically: true,
 
+    javaScriptCanOpenWindowsAutomatically:
+    true,
+
+    // Needed for target="_blank" / window.open().
     supportMultipleWindows: true,
 
+    // Important for checkout/session flow.
     thirdPartyCookiesEnabled: true,
+
     sharedCookiesEnabled: true,
 
+    // Cache.
     cacheEnabled: true,
 
+    // Responsive website behavior.
     useWideViewPort: true,
+
     loadWithOverviewMode: true,
 
+    // Disable WebView zoom controls.
     supportZoom: false,
+
     builtInZoomControls: false,
+
     displayZoomControls: false,
 
+    // Native-looking UI.
     verticalScrollBarEnabled: false,
+
     horizontalScrollBarEnabled: false,
 
+    // Media.
     allowsInlineMediaPlayback: true,
-    mediaPlaybackRequiresUserGesture: true,
 
+    mediaPlaybackRequiresUserGesture:
+    true,
+
+    // Performance.
     hardwareAcceleration: true,
 
-    // IMPORTANT:
-    // On your TECNO device, SurfaceView/BLASTBufferQueue
-    // errors were showing with Hybrid Composition.
+    // ==========================================================
+    // IMPORTANT
+    // ==========================================================
+    //
+    // Keep this FALSE.
+    //
+    // Hybrid Composition caused SurfaceView /
+    // BLASTBufferQueue problems on the tested TECNO device.
+    //
+    // This configuration is already confirmed working.
+    // ==========================================================
+
     useHybridComposition: false,
 
+    // We show our own native error screen.
     disableDefaultErrorPage: true,
 
+    // Security.
     allowFileAccessFromFileURLs: false,
-    allowUniversalAccessFromFileURLs: false,
 
-    preferredContentMode: UserPreferredContentMode.MOBILE,
+    allowUniversalAccessFromFileURLs:
+    false,
 
+    // Mobile website.
+    preferredContentMode:
+    UserPreferredContentMode.MOBILE,
+
+    // Background.
     transparentBackground: false,
-    underPageBackgroundColor: Colors.white,
+
+    underPageBackgroundColor:
+    Colors.white,
   );
+
+  // ============================================================
+  // INIT
+  // ============================================================
 
   @override
   void initState() {
     super.initState();
 
-    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance
+        .addObserver(this);
 
     _setupSystemUi();
 
-    _pullToRefreshController = PullToRefreshController(
-      settings: PullToRefreshSettings(
-        color: _brandRed,
-        backgroundColor: Colors.white,
-      ),
-      onRefresh: _refreshWebView,
-    );
+    // ==========================================================
+    // PULL TO REFRESH
+    // ==========================================================
 
-    _internetConnection = InternetConnection.createInstance();
+    _pullToRefreshController =
+        PullToRefreshController(
+          settings:
+          PullToRefreshSettings(
+            color: _brandRed,
+            backgroundColor:
+            Colors.white,
+          ),
 
-    // Background connectivity monitor.
-    // WebView does not wait for it.
+          onRefresh:
+          _refreshWebView,
+        );
+
+    // ==========================================================
+    // CONNECTIVITY
+    // ==========================================================
+    //
+    // Important:
+    //
+    // Connectivity check happens in background.
+    // WebView is NOT blocked while waiting for it.
+    // ==========================================================
+
     _initialiseConnectivity();
   }
+
+  // ============================================================
+  // SYSTEM UI
+  // ============================================================
 
   void _setupSystemUi() {
     SystemChrome.setEnabledSystemUIMode(
@@ -124,13 +224,26 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
-        statusBarColor: Colors.white,
-        statusBarIconBrightness: Brightness.dark,
-        statusBarBrightness: Brightness.light,
-        systemNavigationBarColor: Colors.white,
-        systemNavigationBarIconBrightness: Brightness.dark,
-        systemNavigationBarDividerColor: Colors.transparent,
-        systemNavigationBarContrastEnforced: false,
+        statusBarColor:
+        Colors.white,
+
+        statusBarIconBrightness:
+        Brightness.dark,
+
+        statusBarBrightness:
+        Brightness.light,
+
+        systemNavigationBarColor:
+        Colors.white,
+
+        systemNavigationBarIconBrightness:
+        Brightness.dark,
+
+        systemNavigationBarDividerColor:
+        Colors.transparent,
+
+        systemNavigationBarContrastEnforced:
+        false,
       ),
     );
   }
@@ -139,17 +252,27 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   // CONNECTIVITY
   // ============================================================
 
-  Future<void> _initialiseConnectivity() async {
+  Future<void>
+  _initialiseConnectivity() async {
+    // Listen for future internet changes.
+
     _internetSubscription =
-        _internetConnection.onStatusChange.listen(
+        ConnectivityService
+            .connectionStream
+            .listen(
           _handleInternetStatus,
         );
 
+    // Initial check in background.
+
     try {
       final hasInternet =
-      await _internetConnection.hasInternetAccess;
+      await ConnectivityService
+          .hasInternet();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       if (!hasInternet) {
         setState(() {
@@ -157,81 +280,116 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         });
       }
     } catch (_) {
-      // Let WebView callbacks handle failure.
+      // Do nothing here.
+      //
+      // WebView callbacks will handle
+      // any actual loading failure.
     }
   }
 
   void _handleInternetStatus(
-      InternetStatus status,
+      bool connected,
       ) {
-    if (!mounted) return;
-
-    final connected =
-        status == InternetStatus.connected;
-
-    final wasOffline = _isOffline;
-
-    if (connected && !_isOffline) {
+    if (!mounted) {
       return;
     }
 
-    if (!connected && _isOffline) {
+    final bool wasOffline =
+        _isOffline;
+
+    // No state change.
+    if (connected &&
+        !_isOffline) {
+      return;
+    }
+
+    // No state change.
+    if (!connected &&
+        _isOffline) {
       return;
     }
 
     setState(() {
-      _isOffline = !connected;
+      _isOffline =
+      !connected;
     });
 
-    if (connected && wasOffline) {
+    // Internet returned.
+    if (connected &&
+        wasOffline) {
       _recoverAfterConnection();
     }
   }
 
-  Future<void> _recoverAfterConnection() async {
-    if (!mounted) return;
+  Future<void>
+  _recoverAfterConnection() async {
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
       _hasPageError = false;
+
       _errorTitle = null;
+
       _errorDescription = null;
+
       _isLoading = true;
     });
 
+    // Give network a tiny moment to settle.
     await Future<void>.delayed(
-      const Duration(milliseconds: 150),
+      const Duration(
+        milliseconds: 150,
+      ),
     );
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
-    await _webViewController?.reload();
+    try {
+      await _webViewController
+          ?.reload();
+    } catch (_) {
+      // Loading callbacks will handle it.
+    }
   }
 
   // ============================================================
-  // REFRESH
+  // PULL TO REFRESH
   // ============================================================
 
-  Future<void> _refreshWebView() async {
+  Future<void>
+  _refreshWebView() async {
     try {
       final connected =
-      await _internetConnection.hasInternetAccess;
+      await ConnectivityService
+          .hasInternet();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
+      // No internet.
       if (!connected) {
         setState(() {
           _isOffline = true;
         });
 
-        await _pullToRefreshController.endRefreshing();
+        await _pullToRefreshController
+            .endRefreshing();
 
         return;
       }
 
       setState(() {
         _isOffline = false;
+
         _hasPageError = false;
+
         _errorTitle = null;
+
         _errorDescription = null;
       });
 
@@ -241,10 +399,12 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
       if (controller != null) {
         await controller.reload();
       } else {
-        await _pullToRefreshController.endRefreshing();
+        await _pullToRefreshController
+            .endRefreshing();
       }
     } catch (_) {
-      await _pullToRefreshController.endRefreshing();
+      await _pullToRefreshController
+          .endRefreshing();
     }
   }
 
@@ -253,7 +413,14 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   // ============================================================
 
   Future<void> _retry() async {
-    if (_isRetrying) return;
+    // Prevent double taps.
+    if (_isRetrying) {
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
       _isRetrying = true;
@@ -261,13 +428,17 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 
     try {
       final connected =
-      await _internetConnection.hasInternetAccess;
+      await ConnectivityService
+          .hasInternet();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       if (!connected) {
         setState(() {
           _isOffline = true;
+
           _isRetrying = false;
         });
 
@@ -276,16 +447,30 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 
       setState(() {
         _isOffline = false;
+
         _hasPageError = false;
+
         _errorTitle = null;
+
         _errorDescription = null;
+
         _isLoading = true;
+
         _isRetrying = false;
       });
 
-      await _webViewController?.reload();
+      final controller =
+          _webViewController;
+
+      if (controller != null) {
+        await controller.reload();
+      } else {
+        await _goHome();
+      }
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _isRetrying = false;
@@ -298,224 +483,99 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   // ============================================================
 
   void _startPageTimeout() {
-    _pageTimeoutTimer?.cancel();
+    _pageTimeoutTimer
+        ?.cancel();
 
-    _pageTimeoutTimer = Timer(
-      const Duration(seconds: 15),
-          () {
-        if (!mounted) return;
+    _pageTimeoutTimer =
+        Timer(
+          const Duration(
+            seconds: 15,
+          ),
+              () {
+            if (!mounted) {
+              return;
+            }
 
-        if (_isLoading &&
-            !_isOffline &&
-            !_initialPageVisible) {
-          setState(() {
-            _hasPageError = true;
-            _isLoading = false;
+            // Only use the timeout while the
+            // initial WebView page has not become visible.
+            //
+            // We don't want to throw timeout screens
+            // during normal internal navigation.
 
-            _errorTitle =
-            'Taking longer than expected';
+            if (_isLoading &&
+                !_isOffline &&
+                !_initialPageVisible) {
+              setState(() {
+                _hasPageError =
+                true;
 
-            _errorDescription =
-            'The page is taking too long to load. '
-                'Please check your connection and try again.';
-          });
-        }
+                _isLoading =
+                false;
+
+                _errorTitle =
+                'Taking longer than expected';
+
+                _errorDescription =
+                'The page is taking too long to load. '
+                    'Please check your connection and try again.';
+              });
+            }
+          },
+        );
+  }
+
+  void _stopPageTimeout() {
+    _pageTimeoutTimer
+        ?.cancel();
+
+    _pageTimeoutTimer =
+    null;
+  }
+
+  // ============================================================
+  // URL NAVIGATION
+  // ============================================================
+
+  Future<NavigationActionPolicy>
+  _handleNavigation(
+      NavigationAction navigationAction,
+      ) {
+    return UrlHandlerService
+        .handleNavigation(
+      navigationAction,
+
+      onLaunchFailed: (
+          message,
+          ) {
+        _showMessage(
+          message,
+        );
       },
     );
   }
 
-  void _stopPageTimeout() {
-    _pageTimeoutTimer?.cancel();
-    _pageTimeoutTimer = null;
-  }
-
   // ============================================================
-  // URL HANDLING
+  // TARGET="_BLANK" / WINDOW.OPEN()
   // ============================================================
 
-  Future<NavigationActionPolicy> _handleNavigation(
-      NavigationAction navigationAction,
-      ) async {
-    final webUri =
-        navigationAction.request.url;
-
-    if (webUri == null) {
-      return NavigationActionPolicy.ALLOW;
-    }
-
-    final uri =
-    Uri.parse(webUri.toString());
-
-    final scheme =
-    uri.scheme.toLowerCase();
-
-    if (scheme == 'http' ||
-        scheme == 'https') {
-      if (_shouldOpenHttpUrlExternally(uri)) {
-        await _launchExternal(uri);
-
-        return NavigationActionPolicy.CANCEL;
-      }
-
-      return NavigationActionPolicy.ALLOW;
-    }
-
-    const externalSchemes = <String>{
-      'tel',
-      'mailto',
-      'sms',
-      'geo',
-      'maps',
-      'market',
-      'itms-apps',
-      'whatsapp',
-      'intent',
-    };
-
-    if (externalSchemes.contains(scheme)) {
-      await _launchExternal(uri);
-
-      return NavigationActionPolicy.CANCEL;
-    }
-
-    if (scheme == 'about' ||
-        scheme == 'javascript' ||
-        scheme == 'data' ||
-        scheme == 'blob') {
-      return NavigationActionPolicy.ALLOW;
-    }
-
-    if (scheme.isNotEmpty) {
-      await _launchExternal(uri);
-
-      return NavigationActionPolicy.CANCEL;
-    }
-
-    return NavigationActionPolicy.ALLOW;
-  }
-
-  bool _shouldOpenHttpUrlExternally(
-      Uri uri,
-      ) {
-    final host =
-    uri.host.toLowerCase();
-
-    if (_isRiderSimHost(host)) {
-      return false;
-    }
-
-    if (_isBreezeHost(host)) {
-      return false;
-    }
-
-    const externalHosts = <String>{
-      'wa.me',
-      'api.whatsapp.com',
-      'web.whatsapp.com',
-
-      'instagram.com',
-      'www.instagram.com',
-
-      'facebook.com',
-      'www.facebook.com',
-      'm.facebook.com',
-
-      'youtube.com',
-      'www.youtube.com',
-      'youtu.be',
-
-      'tiktok.com',
-      'www.tiktok.com',
-
-      'linkedin.com',
-      'www.linkedin.com',
-
-      'twitter.com',
-      'www.twitter.com',
-
-      'x.com',
-      'www.x.com',
-
-      'maps.google.com',
-    };
-
-    return externalHosts.contains(host);
-  }
-
-  bool _isRiderSimHost(
-      String host,
-      ) {
-    return host == 'ridersim.com' ||
-        host == 'www.ridersim.com' ||
-        host.endsWith('.ridersim.com');
-  }
-
-  bool _isBreezeHost(
-      String host,
-      ) {
-    return host == 'breezesim.com' ||
-        host == 'www.breezesim.com' ||
-        host.endsWith('.breezesim.com');
-  }
-
-  Future<void> _launchExternal(
-      Uri uri,
-      ) async {
-    try {
-      final opened =
-      await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (!opened) {
-        _showMessage(
-          'Unable to open this link.',
-        );
-      }
-    } catch (_) {
-      _showMessage(
-        'Unable to open this link.',
-      );
-    }
-  }
-
-  // ============================================================
-  // TARGET BLANK
-  // ============================================================
-
-  Future<bool?> _handleCreateWindow(
+  Future<bool?>
+  _handleCreateWindow(
       InAppWebViewController controller,
       CreateWindowAction action,
-      ) async {
-    final webUri =
-        action.request.url;
+      ) {
+    return UrlHandlerService
+        .handleCreateWindow(
+      controller,
+      action,
 
-    if (webUri == null) {
-      return false;
-    }
-
-    final uri =
-    Uri.parse(webUri.toString());
-
-    if (uri.scheme == 'http' ||
-        uri.scheme == 'https') {
-      if (_shouldOpenHttpUrlExternally(uri)) {
-        await _launchExternal(uri);
-      } else {
-        await controller.loadUrl(
-          urlRequest: URLRequest(
-            url: webUri,
-          ),
+      onLaunchFailed: (
+          message,
+          ) {
+        _showMessage(
+          message,
         );
-      }
-
-      return true;
-    }
-
-    await _launchExternal(uri);
-
-    return true;
+      },
+    );
   }
 
   // ============================================================
@@ -525,16 +585,16 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   Future<void> _handleDownload(
       DownloadStartRequest request,
       ) async {
-    final uri =
-    Uri.parse(
-      request.url.toString(),
-    );
-
     try {
+      final uri =
+      Uri.parse(
+        request.url.toString(),
+      );
+
       final opened =
-      await launchUrl(
+      await UrlHandlerService
+          .openDownload(
         uri,
-        mode: LaunchMode.externalApplication,
       );
 
       if (!opened) {
@@ -550,124 +610,69 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   }
 
   // ============================================================
-  // BACK HANDLING
+  // BACK BUTTON
   // ============================================================
 
-  Future<void> _handleBackPressed() async {
+  Future<void>
+  _handleBackPressed() async {
     final controller =
         _webViewController;
 
     if (controller != null) {
       try {
         final canGoBack =
-        await controller.canGoBack();
+        await controller
+            .canGoBack();
 
         if (canGoBack) {
-          await controller.goBack();
+          await controller
+              .goBack();
+
           return;
         }
-      } catch (_) {}
+      } catch (_) {
+        // Continue to exit dialog.
+      }
     }
 
     await _showExitDialog();
   }
 
-  Future<void> _showExitDialog() async {
+  // ============================================================
+  // EXIT DIALOG
+  // ============================================================
+
+  Future<void>
+  _showExitDialog() async {
     if (_exitDialogShowing ||
         !mounted) {
       return;
     }
 
-    _exitDialogShowing = true;
+    _exitDialogShowing =
+    true;
 
     final shouldExit =
-    await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      builder: (
-          dialogContext,
-          ) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-
-          shape:
-          RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(22),
-          ),
-
-          title: Text(
-            'Exit RiderSIM?',
-            style:
-            GoogleFonts.inter(
-              color: _dark,
-              fontSize: 20,
-              fontWeight:
-              FontWeight.w800,
-            ),
-          ),
-
-          content: Text(
-            'Are you sure you want to close the app?',
-            style:
-            GoogleFonts.inter(
-              color: _gray,
-              fontSize: 15,
-              height: 1.4,
-            ),
-          ),
-
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(
-                  dialogContext,
-                ).pop(false);
-              },
-              child: Text(
-                'Cancel',
-                style:
-                GoogleFonts.inter(
-                  color: _gray,
-                  fontWeight:
-                  FontWeight.w600,
-                ),
-              ),
-            ),
-
-            FilledButton(
-              style:
-              FilledButton.styleFrom(
-                backgroundColor:
-                _brandRed,
-                foregroundColor:
-                Colors.white,
-              ),
-              onPressed: () {
-                Navigator.of(
-                  dialogContext,
-                ).pop(true);
-              },
-              child: Text(
-                'Exit',
-                style:
-                GoogleFonts.inter(
-                  fontWeight:
-                  FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+    await AppDialogs
+        .showExitDialog(
+      context,
     );
 
-    _exitDialogShowing = false;
+    _exitDialogShowing =
+    false;
 
-    if (shouldExit != true) {
+    if (!mounted) {
       return;
     }
+
+    if (!shouldExit) {
+      return;
+    }
+
+    // Android apps can explicitly close.
+    //
+    // iOS apps should NOT programmatically
+    // terminate themselves.
 
     if (defaultTargetPlatform ==
         TargetPlatform.android) {
@@ -693,10 +698,14 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   _checkConnectionAfterResume() async {
     try {
       final connected =
-      await _internetConnection.hasInternetAccess;
+      await ConnectivityService
+          .hasInternet();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
+      // App resumed without internet.
       if (!connected) {
         setState(() {
           _isOffline = true;
@@ -705,14 +714,28 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         return;
       }
 
+      // Internet returned while app
+      // was backgrounded.
       if (_isOffline) {
         setState(() {
           _isOffline = false;
+
+          _hasPageError =
+          false;
+
+          _errorTitle =
+          null;
+
+          _errorDescription =
+          null;
         });
 
-        await _webViewController?.reload();
+        await _webViewController
+            ?.reload();
       }
-    } catch (_) {}
+    } catch (_) {
+      // Ignore.
+    }
   }
 
   // ============================================================
@@ -720,20 +743,49 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   // ============================================================
 
   Future<void> _goHome() async {
-    if (_isOffline) return;
+    final connected =
+    await ConnectivityService
+        .hasInternet();
+
+    if (!mounted) {
+      return;
+    }
+
+    if (!connected) {
+      setState(() {
+        _isOffline = true;
+      });
+
+      return;
+    }
 
     setState(() {
+      _isOffline = false;
+
       _hasPageError = false;
+
       _errorTitle = null;
+
       _errorDescription = null;
+
       _isLoading = true;
     });
 
-    await _webViewController?.loadUrl(
-      urlRequest: URLRequest(
-        url: WebUri(_homeUrl),
-      ),
-    );
+    try {
+      await _webViewController
+          ?.loadUrl(
+        urlRequest:
+        URLRequest(
+          url: WebUri(
+            _homeUrl,
+          ),
+        ),
+      );
+    } catch (_) {
+      _showMessage(
+        'Unable to open RiderSIM home page.',
+      );
+    }
   }
 
   // ============================================================
@@ -743,9 +795,12 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   void _showMessage(
       String message,
       ) {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
-    ScaffoldMessenger.of(context)
+    ScaffoldMessenger
+        .of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
@@ -754,8 +809,11 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
             style:
             GoogleFonts.inter(),
           ),
+
           behavior:
-          SnackBarBehavior.floating,
+          SnackBarBehavior
+              .floating,
+
           duration:
           const Duration(
             seconds: 2,
@@ -773,11 +831,10 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
     WidgetsBinding.instance
         .removeObserver(this);
 
-    _pageTimeoutTimer?.cancel();
+    _stopPageTimeout();
 
-    _internetSubscription?.cancel();
-
-    _internetConnection.dispose();
+    _internetSubscription
+        ?.cancel();
 
     super.dispose();
   }
@@ -791,6 +848,8 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
       BuildContext context,
       ) {
     return PopScope(
+      // We handle Android back manually
+      // because WebView has its own history.
       canPop: false,
 
       onPopInvokedWithResult: (
@@ -814,13 +873,30 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 
           child: Stack(
             children: [
+              // ================================================
+              // WEBVIEW
+              // ================================================
+              //
+              // IMPORTANT:
+              //
+              // WebView is ALWAYS mounted immediately.
+              //
+              // We do not wait for connectivity checks.
+              // ================================================
+
               Positioned.fill(
                 child:
                 _buildWebView(),
               ),
 
-              // Keep native loader until actual page
-              // becomes visible.
+              // ================================================
+              // INITIAL NATIVE LOADER
+              // ================================================
+              //
+              // Stays visible until WebView content is actually
+              // committed/visible.
+              // ================================================
+
               if (!_initialPageVisible &&
                   !_isOffline &&
                   !_hasPageError)
@@ -829,36 +905,53 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
                   _NativeLoadingView(),
                 ),
 
+              // ================================================
+              // OFFLINE
+              // ================================================
+
               if (_isOffline)
                 Positioned.fill(
                   child:
-                  _OfflineView(
-                    retrying:
+                  OfflineScreen(
+                    isRetrying:
                     _isRetrying,
+
                     onRetry:
                     _retry,
                   ),
                 ),
 
+              // ================================================
+              // ERROR
+              // ================================================
+
               if (!_isOffline &&
                   _hasPageError)
                 Positioned.fill(
                   child:
-                  _ErrorView(
+                  ErrorScreen(
                     title:
                     _errorTitle ??
                         'Something went wrong',
+
                     description:
                     _errorDescription ??
                         'We couldn’t load this page. Please try again.',
-                    retrying:
+
+                    isRetrying:
                     _isRetrying,
+
                     onRetry:
                     _retry,
+
                     onHome:
                     _goHome,
                   ),
                 ),
+
+              // ================================================
+              // WEB PROGRESS BAR
+              // ================================================
 
               if (_initialPageVisible &&
                   !_isOffline &&
@@ -868,10 +961,16 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
                   top: 0,
                   left: 0,
                   right: 0,
+
                   child:
-                  _WebProgressBar(
+                  WebLoadingBar(
                     progress:
-                    _progress,
+                    _progress /
+                        100.0,
+
+                    visible:
+                    _progress <
+                        100,
                   ),
                 ),
             ],
@@ -887,19 +986,34 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 
   Widget _buildWebView() {
     return InAppWebView(
+      // ========================================================
+      // INITIAL URL
+      // ========================================================
+
       initialUrlRequest:
       URLRequest(
-        url:
-        WebUri(
+        url: WebUri(
           _homeUrl,
         ),
       ),
 
+      // ========================================================
+      // SETTINGS
+      // ========================================================
+
       initialSettings:
       _webSettings,
 
+      // ========================================================
+      // PULL TO REFRESH
+      // ========================================================
+
       pullToRefreshController:
       _pullToRefreshController,
+
+      // ========================================================
+      // WEBVIEW CREATED
+      // ========================================================
 
       onWebViewCreated: (
           controller,
@@ -908,62 +1022,93 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
             controller;
       },
 
+      // ========================================================
+      // LOAD START
+      // ========================================================
+
       onLoadStart: (
           controller,
           url,
           ) {
-        _currentUrl = url;
-
         _startPageTimeout();
 
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
 
         setState(() {
           _isLoading = true;
+
           _progress = 0;
 
-          _hasPageError = false;
+          _hasPageError =
+          false;
 
-          _errorTitle = null;
-          _errorDescription = null;
+          _errorTitle =
+          null;
+
+          _errorDescription =
+          null;
         });
       },
 
-      // IMPORTANT:
-      // Hide native loader when WebView reports visible content.
+      // ========================================================
+      // PAGE CONTENT ACTUALLY VISIBLE
+      // ========================================================
+      //
+      // This callback is important.
+      //
+      // We don't hide the initial native loader based on a
+      // hard-coded timer.
+      //
+      // It hides when WebView reports visible content.
+      // ========================================================
+
       onPageCommitVisible: (
           controller,
           url,
           ) {
-        _currentUrl = url;
-
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
 
         if (!_initialPageVisible) {
           setState(() {
-            _initialPageVisible = true;
+            _initialPageVisible =
+            true;
           });
         }
       },
+
+      // ========================================================
+      // PROGRESS
+      // ========================================================
 
       onProgressChanged: (
           controller,
           progress,
           ) async {
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
 
         setState(() {
-          _progress = progress;
+          _progress =
+              progress;
+
           _isLoading =
               progress < 100;
 
-          /*
-           * Fallback in case onPageCommitVisible
-           * is delayed or unavailable on some device.
-           */
+          // Fallback for devices where
+          // onPageCommitVisible can be delayed.
+          //
+          // This behavior is intentionally preserved from the
+          // working implementation.
+
           if (!_initialPageVisible &&
               progress >= 15) {
-            _initialPageVisible = true;
+            _initialPageVisible =
+            true;
           }
         });
 
@@ -975,29 +1120,47 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         }
       },
 
+      // ========================================================
+      // LOAD COMPLETE
+      // ========================================================
+
       onLoadStop: (
           controller,
           url,
           ) async {
         _stopPageTimeout();
 
-        _currentUrl = url;
-
         await _pullToRefreshController
             .endRefreshing();
 
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
 
         setState(() {
-          _initialPageVisible = true;
+          _initialPageVisible =
+          true;
 
-          _isLoading = false;
+          _isLoading =
+          false;
 
-          _progress = 100;
+          _progress =
+          100;
 
-          _hasPageError = false;
+          _hasPageError =
+          false;
+
+          _errorTitle =
+          null;
+
+          _errorDescription =
+          null;
         });
       },
+
+      // ========================================================
+      // NAVIGATION
+      // ========================================================
 
       shouldOverrideUrlLoading: (
           controller,
@@ -1007,6 +1170,10 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
           navigationAction,
         );
       },
+
+      // ========================================================
+      // TARGET="_BLANK" / WINDOW.OPEN()
+      // ========================================================
 
       onCreateWindow: (
           controller,
@@ -1018,6 +1185,10 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         );
       },
 
+      // ========================================================
+      // DOWNLOAD
+      // ========================================================
+
       onDownloadStartRequest: (
           controller,
           request,
@@ -1027,12 +1198,22 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         );
       },
 
+      // ========================================================
+      // NORMAL WEB ERROR
+      // ========================================================
+
       onReceivedError: (
           controller,
           request,
           error,
           ) async {
-        if (request.isForMainFrame != true) {
+        // Ignore image/CSS/script errors.
+        //
+        // Only show native error UI when the
+        // MAIN document fails.
+
+        if (request.isForMainFrame !=
+            true) {
           return;
         }
 
@@ -1041,50 +1222,66 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         await _pullToRefreshController
             .endRefreshing();
 
-        bool connected = true;
+        final connected =
+        await ConnectivityService
+            .hasInternet();
 
-        try {
-          connected =
-          await _internetConnection
-              .hasInternetAccess;
-        } catch (_) {}
+        if (!mounted) {
+          return;
+        }
 
-        if (!mounted) return;
-
+        // Internet disappeared.
         if (!connected) {
           setState(() {
-            _isOffline = true;
-            _isLoading = false;
+            _isOffline =
+            true;
+
+            _isLoading =
+            false;
           });
 
           return;
         }
 
         setState(() {
-          _hasPageError = true;
-          _isLoading = false;
+          _isOffline =
+          false;
+
+          _hasPageError =
+          true;
+
+          _isLoading =
+          false;
 
           _errorTitle =
           'Unable to load page';
 
           _errorDescription =
-          error.description.isNotEmpty
+          error.description
+              .isNotEmpty
               ? error.description
               : 'Please try again.';
         });
       },
+
+      // ========================================================
+      // HTTP ERROR
+      // ========================================================
 
       onReceivedHttpError: (
           controller,
           request,
           response,
           ) async {
-        if (request.isForMainFrame != true) {
+        // Ignore sub-resource HTTP errors.
+        if (request.isForMainFrame !=
+            true) {
           return;
         }
 
-        final statusCode =
-            response.statusCode ?? 0;
+        final int statusCode =
+            response.statusCode ??
+                0;
 
         if (statusCode < 400) {
           return;
@@ -1095,12 +1292,16 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         await _pullToRefreshController
             .endRefreshing();
 
-        if (!mounted) return;
+        if (!mounted) {
+          return;
+        }
 
         setState(() {
-          _isLoading = false;
+          _isLoading =
+          false;
 
-          _hasPageError = true;
+          _hasPageError =
+          true;
 
           _errorTitle =
           'Page unavailable';
@@ -1111,21 +1312,54 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         });
       },
 
+      // ========================================================
+      // WEB CONTENT PROCESS TERMINATED
+      // ========================================================
+      //
+      // Mostly relevant to iOS / WebKit process termination.
+      // Reload instead of showing a dead WebView.
+      // ========================================================
+
       onWebContentProcessDidTerminate: (
           controller,
           ) async {
-        await controller.reload();
+        try {
+          await controller.reload();
+        } catch (_) {
+          if (!mounted) {
+            return;
+          }
+
+          setState(() {
+            _hasPageError =
+            true;
+
+            _isLoading =
+            false;
+
+            _errorTitle =
+            'Unable to restore page';
+
+            _errorDescription =
+            'Please try again.';
+          });
+        }
       },
     );
   }
 }
 
 // ================================================================
-// LOADING VIEW
+// INITIAL NATIVE LOADING VIEW
+// ================================================================
+//
+// This remains here intentionally.
+//
+// It belongs specifically to WebView startup,
+// unlike offline/error UI which are reusable screens.
 // ================================================================
 
-class _NativeLoadingView
-    extends StatelessWidget {
+class _NativeLoadingView extends StatelessWidget {
   const _NativeLoadingView();
 
   @override
@@ -1147,6 +1381,8 @@ class _NativeLoadingView
           MainAxisSize.min,
 
           children: [
+            // RiderSIM logo.
+
             RepaintBoundary(
               child:
               Image.asset(
@@ -1168,15 +1404,12 @@ class _NativeLoadingView
             ),
 
             const SizedBox(
-              height:
-              24,
+              height: 24,
             ),
 
             const SizedBox(
-              width:
-              27,
-              height:
-              27,
+              width: 27,
+              height: 27,
 
               child:
               CircularProgressIndicator(
@@ -1191,8 +1424,7 @@ class _NativeLoadingView
             ),
 
             const SizedBox(
-              height:
-              14,
+              height: 14,
             ),
 
             Text(
@@ -1205,509 +1437,13 @@ class _NativeLoadingView
                   0xFF69707A,
                 ),
 
-                fontSize:
-                14,
+                fontSize: 14,
 
                 fontWeight:
                 FontWeight.w400,
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ================================================================
-// PROGRESS BAR
-// ================================================================
-
-class _WebProgressBar
-    extends StatelessWidget {
-  const _WebProgressBar({
-    required this.progress,
-  });
-
-  final int progress;
-
-  @override
-  Widget build(
-      BuildContext context,
-      ) {
-    return IgnorePointer(
-      child:
-      LinearProgressIndicator(
-        value:
-        progress <= 0
-            ? null
-            : progress / 100,
-
-        minHeight:
-        2,
-
-        backgroundColor:
-        const Color(
-          0x12EE0018,
-        ),
-
-        valueColor:
-        const AlwaysStoppedAnimation<Color>(
-          Color(
-            0xFFEE0018,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ================================================================
-// OFFLINE VIEW
-// ================================================================
-
-class _OfflineView
-    extends StatelessWidget {
-  const _OfflineView({
-    required this.retrying,
-    required this.onRetry,
-  });
-
-  final bool retrying;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(
-      BuildContext context,
-      ) {
-    final width =
-        MediaQuery.sizeOf(
-          context,
-        ).width;
-
-    return ColoredBox(
-      color:
-      Colors.white,
-
-      child: Center(
-        child:
-        SingleChildScrollView(
-          padding:
-          EdgeInsets.symmetric(
-            horizontal:
-            width * 0.11,
-
-            vertical:
-            30,
-          ),
-
-          child: Column(
-            mainAxisSize:
-            MainAxisSize.min,
-
-            children: [
-              Container(
-                width:
-                88,
-                height:
-                88,
-
-                decoration:
-                const BoxDecoration(
-                  color:
-                  Color(
-                    0xFFFFECEE,
-                  ),
-                  shape:
-                  BoxShape.circle,
-                ),
-
-                child:
-                const Icon(
-                  Icons
-                      .wifi_off_rounded,
-
-                  color:
-                  Color(
-                    0xFFEE0018,
-                  ),
-
-                  size:
-                  41,
-                ),
-              ),
-
-              const SizedBox(
-                height:
-                25,
-              ),
-
-              Text(
-                'No Internet Connection',
-
-                textAlign:
-                TextAlign.center,
-
-                style:
-                GoogleFonts.inter(
-                  color:
-                  const Color(
-                    0xFF080808,
-                  ),
-
-                  fontSize:
-                  22,
-
-                  fontWeight:
-                  FontWeight.w800,
-
-                  letterSpacing:
-                  -0.5,
-                ),
-              ),
-
-              const SizedBox(
-                height:
-                11,
-              ),
-
-              Text(
-                'Check your Wi-Fi or mobile data connection and try again.',
-
-                textAlign:
-                TextAlign.center,
-
-                style:
-                GoogleFonts.inter(
-                  color:
-                  const Color(
-                    0xFF68707B,
-                  ),
-
-                  fontSize:
-                  15,
-
-                  height:
-                  1.45,
-                ),
-              ),
-
-              const SizedBox(
-                height:
-                28,
-              ),
-
-              _RetryButton(
-                loading:
-                retrying,
-                text:
-                'Try Again',
-                onPressed:
-                onRetry,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ================================================================
-// ERROR VIEW
-// ================================================================
-
-class _ErrorView
-    extends StatelessWidget {
-  const _ErrorView({
-    required this.title,
-    required this.description,
-    required this.retrying,
-    required this.onRetry,
-    required this.onHome,
-  });
-
-  final String title;
-  final String description;
-  final bool retrying;
-
-  final VoidCallback onRetry;
-  final VoidCallback onHome;
-
-  @override
-  Widget build(
-      BuildContext context,
-      ) {
-    final width =
-        MediaQuery.sizeOf(
-          context,
-        ).width;
-
-    return ColoredBox(
-      color:
-      Colors.white,
-
-      child: Center(
-        child:
-        SingleChildScrollView(
-          padding:
-          EdgeInsets.symmetric(
-            horizontal:
-            width * 0.10,
-
-            vertical:
-            30,
-          ),
-
-          child: Column(
-            mainAxisSize:
-            MainAxisSize.min,
-
-            children: [
-              Container(
-                width:
-                88,
-                height:
-                88,
-
-                decoration:
-                const BoxDecoration(
-                  color:
-                  Color(
-                    0xFFFFECEE,
-                  ),
-                  shape:
-                  BoxShape.circle,
-                ),
-
-                child:
-                const Icon(
-                  Icons
-                      .error_outline_rounded,
-
-                  color:
-                  Color(
-                    0xFFEE0018,
-                  ),
-
-                  size:
-                  42,
-                ),
-              ),
-
-              const SizedBox(
-                height:
-                24,
-              ),
-
-              Text(
-                title,
-
-                textAlign:
-                TextAlign.center,
-
-                style:
-                GoogleFonts.inter(
-                  color:
-                  const Color(
-                    0xFF080808,
-                  ),
-
-                  fontSize:
-                  22,
-
-                  fontWeight:
-                  FontWeight.w800,
-
-                  letterSpacing:
-                  -0.5,
-                ),
-              ),
-
-              const SizedBox(
-                height:
-                11,
-              ),
-
-              Text(
-                description,
-
-                textAlign:
-                TextAlign.center,
-
-                style:
-                GoogleFonts.inter(
-                  color:
-                  const Color(
-                    0xFF68707B,
-                  ),
-
-                  fontSize:
-                  15,
-
-                  height:
-                  1.45,
-                ),
-              ),
-
-              const SizedBox(
-                height:
-                28,
-              ),
-
-              _RetryButton(
-                loading:
-                retrying,
-                text:
-                'Try Again',
-                onPressed:
-                onRetry,
-              ),
-
-              const SizedBox(
-                height:
-                10,
-              ),
-
-              TextButton(
-                onPressed:
-                onHome,
-
-                child:
-                Text(
-                  'Back to Home',
-
-                  style:
-                  GoogleFonts.inter(
-                    color:
-                    const Color(
-                      0xFF68707B,
-                    ),
-
-                    fontWeight:
-                    FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ================================================================
-// RETRY BUTTON
-// ================================================================
-
-class _RetryButton
-    extends StatelessWidget {
-  const _RetryButton({
-    required this.loading,
-    required this.text,
-    required this.onPressed,
-  });
-
-  final bool loading;
-  final String text;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(
-      BuildContext context,
-      ) {
-    return SizedBox(
-      width:
-      double.infinity,
-
-      height:
-      55,
-
-      child:
-      FilledButton(
-        onPressed:
-        loading
-            ? null
-            : onPressed,
-
-        style:
-        FilledButton.styleFrom(
-          backgroundColor:
-          const Color(
-            0xFFEE0018,
-          ),
-
-          disabledBackgroundColor:
-          const Color(
-            0xFFEE0018,
-          ).withOpacity(
-            0.65,
-          ),
-
-          foregroundColor:
-          Colors.white,
-
-          elevation:
-          0,
-
-          shape:
-          RoundedRectangleBorder(
-            borderRadius:
-            BorderRadius.circular(
-              100,
-            ),
-          ),
-        ),
-
-        child:
-        AnimatedSwitcher(
-          duration:
-          const Duration(
-            milliseconds:
-            160,
-          ),
-
-          child:
-          loading
-              ? const SizedBox(
-            key:
-            ValueKey(
-              'loader',
-            ),
-
-            width:
-            21,
-
-            height:
-            21,
-
-            child:
-            CircularProgressIndicator(
-              strokeWidth:
-              2.3,
-
-              color:
-              Colors.white,
-            ),
-          )
-              : Text(
-            text,
-
-            key:
-            const ValueKey(
-              'text',
-            ),
-
-            style:
-            GoogleFonts.inter(
-              fontSize:
-              16,
-
-              fontWeight:
-              FontWeight.w700,
-            ),
-          ),
         ),
       ),
     );
