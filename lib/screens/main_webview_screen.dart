@@ -14,6 +14,7 @@ import '../widgets/web_loading_bar.dart';
 
 import 'error_screen.dart';
 import 'offline_screen.dart';
+import 'more_screen.dart';
 
 class MainWebViewScreen extends StatefulWidget {
   const MainWebViewScreen({
@@ -36,6 +37,21 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 
   static const Color _brandRed =
   Color(0xFFEE0018);
+
+  static const Color _navBackground =
+      Colors.white;
+
+  static const Color _navUnselected =
+  Color(0xFF7B8088);
+
+  // ============================================================
+  // BOTTOM NAVIGATION
+  // ============================================================
+
+  int _selectedTab = 0;
+
+  // 0 = Home
+  // 1 = More
 
   // ============================================================
   // WEBVIEW
@@ -140,12 +156,12 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
     // IMPORTANT
     // ==========================================================
     //
-    // Keep this FALSE.
+    // KEEP FALSE.
     //
     // Hybrid Composition caused SurfaceView /
-    // BLASTBufferQueue problems on the tested TECNO device.
+    // BLASTBufferQueue problems on tested TECNO device.
     //
-    // This configuration is already confirmed working.
+    // Current configuration is confirmed working.
     // ==========================================================
 
     useHybridComposition: false,
@@ -195,19 +211,12 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
             backgroundColor:
             Colors.white,
           ),
-
           onRefresh:
           _refreshWebView,
         );
 
     // ==========================================================
     // CONNECTIVITY
-    // ==========================================================
-    //
-    // Important:
-    //
-    // Connectivity check happens in background.
-    // WebView is NOT blocked while waiting for it.
     // ==========================================================
 
     _initialiseConnectivity();
@@ -249,21 +258,36 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   }
 
   // ============================================================
+  // BOTTOM NAVIGATION
+  // ============================================================
+
+  void _changeTab(
+      int index,
+      ) {
+    if (_selectedTab == index) {
+      return;
+    }
+
+    FocusManager.instance.primaryFocus
+        ?.unfocus();
+
+    setState(() {
+      _selectedTab = index;
+    });
+  }
+
+  // ============================================================
   // CONNECTIVITY
   // ============================================================
 
   Future<void>
   _initialiseConnectivity() async {
-    // Listen for future internet changes.
-
     _internetSubscription =
         ConnectivityService
             .connectionStream
             .listen(
           _handleInternetStatus,
         );
-
-    // Initial check in background.
 
     try {
       final hasInternet =
@@ -280,10 +304,7 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         });
       }
     } catch (_) {
-      // Do nothing here.
-      //
-      // WebView callbacks will handle
-      // any actual loading failure.
+      // WebView callbacks handle actual failure.
     }
   }
 
@@ -297,13 +318,11 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
     final bool wasOffline =
         _isOffline;
 
-    // No state change.
     if (connected &&
         !_isOffline) {
       return;
     }
 
-    // No state change.
     if (!connected &&
         _isOffline) {
       return;
@@ -314,7 +333,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
       !connected;
     });
 
-    // Internet returned.
     if (connected &&
         wasOffline) {
       _recoverAfterConnection();
@@ -337,7 +355,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
       _isLoading = true;
     });
 
-    // Give network a tiny moment to settle.
     await Future<void>.delayed(
       const Duration(
         milliseconds: 150,
@@ -352,7 +369,7 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
       await _webViewController
           ?.reload();
     } catch (_) {
-      // Loading callbacks will handle it.
+      // Loading callbacks handle it.
     }
   }
 
@@ -371,7 +388,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         return;
       }
 
-      // No internet.
       if (!connected) {
         setState(() {
           _isOffline = true;
@@ -413,7 +429,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
   // ============================================================
 
   Future<void> _retry() async {
-    // Prevent double taps.
     if (_isRetrying) {
       return;
     }
@@ -496,12 +511,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
               return;
             }
 
-            // Only use the timeout while the
-            // initial WebView page has not become visible.
-            //
-            // We don't want to throw timeout screens
-            // during normal internal navigation.
-
             if (_isLoading &&
                 !_isOffline &&
                 !_initialPageVisible) {
@@ -543,7 +552,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
     return UrlHandlerService
         .handleNavigation(
       navigationAction,
-
       onLaunchFailed: (
           message,
           ) {
@@ -567,7 +575,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         .handleCreateWindow(
       controller,
       action,
-
       onLaunchFailed: (
           message,
           ) {
@@ -615,6 +622,26 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 
   Future<void>
   _handleBackPressed() async {
+    // ==========================================================
+    // MORE TAB
+    // ==========================================================
+    //
+    // If user is on More screen,
+    // Android back returns to Home first.
+    // ==========================================================
+
+    if (_selectedTab != 0) {
+      setState(() {
+        _selectedTab = 0;
+      });
+
+      return;
+    }
+
+    // ==========================================================
+    // HOME / WEBVIEW
+    // ==========================================================
+
     final controller =
         _webViewController;
 
@@ -669,11 +696,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
       return;
     }
 
-    // Android apps can explicitly close.
-    //
-    // iOS apps should NOT programmatically
-    // terminate themselves.
-
     if (defaultTargetPlatform ==
         TargetPlatform.android) {
       await SystemNavigator.pop();
@@ -705,7 +727,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         return;
       }
 
-      // App resumed without internet.
       if (!connected) {
         setState(() {
           _isOffline = true;
@@ -714,8 +735,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         return;
       }
 
-      // Internet returned while app
-      // was backgrounded.
       if (_isOffline) {
         setState(() {
           _isOffline = false;
@@ -749,6 +768,13 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 
     if (!mounted) {
       return;
+    }
+
+    // Always move to Home tab.
+    if (_selectedTab != 0) {
+      setState(() {
+        _selectedTab = 0;
+      });
     }
 
     if (!connected) {
@@ -809,11 +835,8 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
             style:
             GoogleFonts.inter(),
           ),
-
           behavior:
-          SnackBarBehavior
-              .floating,
-
+          SnackBarBehavior.floating,
           duration:
           const Duration(
             seconds: 2,
@@ -848,8 +871,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
       BuildContext context,
       ) {
     return PopScope(
-      // We handle Android back manually
-      // because WebView has its own history.
       canPop: false,
 
       onPopInvokedWithResult: (
@@ -868,111 +889,259 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
         resizeToAvoidBottomInset:
         true,
 
-        body: SafeArea(
-          bottom: false,
+        // ======================================================
+        // BODY
+        // ======================================================
 
-          child: Stack(
+        body: IndexedStack(
+          index:
+          _selectedTab,
+
+          children: [
+            // ==================================================
+            // HOME / WEBVIEW
+            // ==================================================
+
+            _buildHomeContent(),
+
+            // ==================================================
+            // MORE
+            // ==================================================
+
+            const MoreScreen(),
+          ],
+        ),
+
+        // ======================================================
+        // BOTTOM NAVIGATION
+        // ======================================================
+
+        bottomNavigationBar:
+        _buildBottomNavigation(),
+      ),
+    );
+  }
+
+  // ============================================================
+  // HOME CONTENT
+  // ============================================================
+
+  Widget _buildHomeContent() {
+    return SafeArea(
+      bottom: false,
+
+      child: Stack(
+        children: [
+          // ====================================================
+          // WEBVIEW
+          // ====================================================
+          //
+          // IMPORTANT:
+          //
+          // WebView stays mounted even when More tab is active
+          // because parent uses IndexedStack.
+          //
+          // This preserves:
+          //
+          // - Breeze session
+          // - checkout state
+          // - cookies
+          // - scroll position
+          // - navigation history
+          // ====================================================
+
+          Positioned.fill(
+            child:
+            _buildWebView(),
+          ),
+
+          // ====================================================
+          // INITIAL NATIVE LOADER
+          // ====================================================
+
+          if (!_initialPageVisible &&
+              !_isOffline &&
+              !_hasPageError)
+            const Positioned.fill(
+              child:
+              _NativeLoadingView(),
+            ),
+
+          // ====================================================
+          // OFFLINE
+          // ====================================================
+
+          if (_isOffline)
+            Positioned.fill(
+              child:
+              OfflineScreen(
+                isRetrying:
+                _isRetrying,
+
+                onRetry:
+                _retry,
+              ),
+            ),
+
+          // ====================================================
+          // ERROR
+          // ====================================================
+
+          if (!_isOffline &&
+              _hasPageError)
+            Positioned.fill(
+              child:
+              ErrorScreen(
+                title:
+                _errorTitle ??
+                    'Something went wrong',
+
+                description:
+                _errorDescription ??
+                    'We couldn’t load this page. Please try again.',
+
+                isRetrying:
+                _isRetrying,
+
+                onRetry:
+                _retry,
+
+                onHome:
+                _goHome,
+              ),
+            ),
+
+          // ====================================================
+          // WEB PROGRESS BAR
+          // ====================================================
+
+          if (_initialPageVisible &&
+              !_isOffline &&
+              !_hasPageError &&
+              _isLoading)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+
+              child:
+              WebLoadingBar(
+                progress:
+                _progress /
+                    100.0,
+
+                visible:
+                _progress <
+                    100,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // BOTTOM NAVIGATION
+  // ============================================================
+
+  Widget _buildBottomNavigation() {
+    return Container(
+      decoration:
+      BoxDecoration(
+        color:
+        _navBackground,
+
+        border:
+        const Border(
+          top:
+          BorderSide(
+            color:
+            Color(
+              0xFFECECEF,
+            ),
+            width: 0.8,
+          ),
+        ),
+
+        boxShadow: [
+          BoxShadow(
+            color:
+            Colors.black.withOpacity(
+              0.045,
+            ),
+            blurRadius: 18,
+            offset:
+            const Offset(
+              0,
+              -3,
+            ),
+          ),
+        ],
+      ),
+
+      child: SafeArea(
+        top: false,
+
+        child: SizedBox(
+          height: 64,
+
+          child: Row(
             children: [
               // ================================================
-              // WEBVIEW
-              // ================================================
-              //
-              // IMPORTANT:
-              //
-              // WebView is ALWAYS mounted immediately.
-              //
-              // We do not wait for connectivity checks.
+              // HOME
               // ================================================
 
-              Positioned.fill(
+              Expanded(
                 child:
-                _buildWebView(),
+                _BottomNavItem(
+                  icon:
+                  Icons.home_outlined,
+
+                  activeIcon:
+                  Icons.home_rounded,
+
+                  label:
+                  'Home',
+
+                  selected:
+                  _selectedTab ==
+                      0,
+
+                  onTap: () {
+                    _changeTab(
+                      0,
+                    );
+                  },
+                ),
               ),
 
               // ================================================
-              // INITIAL NATIVE LOADER
-              // ================================================
-              //
-              // Stays visible until WebView content is actually
-              // committed/visible.
+              // MORE
               // ================================================
 
-              if (!_initialPageVisible &&
-                  !_isOffline &&
-                  !_hasPageError)
-                const Positioned.fill(
-                  child:
-                  _NativeLoadingView(),
+              Expanded(
+                child:
+                _BottomNavItem(
+                  icon:
+                  Icons.grid_view_outlined,
+
+                  activeIcon:
+                  Icons.grid_view_rounded,
+
+                  label:
+                  'More',
+
+                  selected:
+                  _selectedTab ==
+                      1,
+
+                  onTap: () {
+                    _changeTab(
+                      1,
+                    );
+                  },
                 ),
-
-              // ================================================
-              // OFFLINE
-              // ================================================
-
-              if (_isOffline)
-                Positioned.fill(
-                  child:
-                  OfflineScreen(
-                    isRetrying:
-                    _isRetrying,
-
-                    onRetry:
-                    _retry,
-                  ),
-                ),
-
-              // ================================================
-              // ERROR
-              // ================================================
-
-              if (!_isOffline &&
-                  _hasPageError)
-                Positioned.fill(
-                  child:
-                  ErrorScreen(
-                    title:
-                    _errorTitle ??
-                        'Something went wrong',
-
-                    description:
-                    _errorDescription ??
-                        'We couldn’t load this page. Please try again.',
-
-                    isRetrying:
-                    _isRetrying,
-
-                    onRetry:
-                    _retry,
-
-                    onHome:
-                    _goHome,
-                  ),
-                ),
-
-              // ================================================
-              // WEB PROGRESS BAR
-              // ================================================
-
-              if (_initialPageVisible &&
-                  !_isOffline &&
-                  !_hasPageError &&
-                  _isLoading)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-
-                  child:
-                  WebLoadingBar(
-                    progress:
-                    _progress /
-                        100.0,
-
-                    visible:
-                    _progress <
-                        100,
-                  ),
-                ),
+              ),
             ],
           ),
         ),
@@ -992,7 +1161,8 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 
       initialUrlRequest:
       URLRequest(
-        url: WebUri(
+        url:
+        WebUri(
           _homeUrl,
         ),
       ),
@@ -1055,14 +1225,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
       // ========================================================
       // PAGE CONTENT ACTUALLY VISIBLE
       // ========================================================
-      //
-      // This callback is important.
-      //
-      // We don't hide the initial native loader based on a
-      // hard-coded timer.
-      //
-      // It hides when WebView reports visible content.
-      // ========================================================
 
       onPageCommitVisible: (
           controller,
@@ -1099,12 +1261,7 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
           _isLoading =
               progress < 100;
 
-          // Fallback for devices where
-          // onPageCommitVisible can be delayed.
-          //
-          // This behavior is intentionally preserved from the
-          // working implementation.
-
+          // Fallback preserved from working implementation.
           if (!_initialPageVisible &&
               progress >= 15) {
             _initialPageVisible =
@@ -1208,10 +1365,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
           error,
           ) async {
         // Ignore image/CSS/script errors.
-        //
-        // Only show native error UI when the
-        // MAIN document fails.
-
         if (request.isForMainFrame !=
             true) {
           return;
@@ -1230,7 +1383,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
           return;
         }
 
-        // Internet disappeared.
         if (!connected) {
           setState(() {
             _isOffline =
@@ -1273,7 +1425,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
           request,
           response,
           ) async {
-        // Ignore sub-resource HTTP errors.
         if (request.isForMainFrame !=
             true) {
           return;
@@ -1315,10 +1466,6 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
       // ========================================================
       // WEB CONTENT PROCESS TERMINATED
       // ========================================================
-      //
-      // Mostly relevant to iOS / WebKit process termination.
-      // Reload instead of showing a dead WebView.
-      // ========================================================
 
       onWebContentProcessDidTerminate: (
           controller,
@@ -1350,16 +1497,158 @@ class _MainWebViewScreenState extends State<MainWebViewScreen>
 }
 
 // ================================================================
-// INITIAL NATIVE LOADING VIEW
-// ================================================================
-//
-// This remains here intentionally.
-//
-// It belongs specifically to WebView startup,
-// unlike offline/error UI which are reusable screens.
+// BOTTOM NAV ITEM
 // ================================================================
 
-class _NativeLoadingView extends StatelessWidget {
+class _BottomNavItem
+    extends StatelessWidget {
+  const _BottomNavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+
+  final IconData activeIcon;
+
+  final String label;
+
+  final bool selected;
+
+  final VoidCallback onTap;
+
+  static const Color _brandRed =
+  Color(0xFFEE0018);
+
+  static const Color _gray =
+  Color(0xFF747982);
+
+  @override
+  Widget build(
+      BuildContext context,
+      ) {
+    return Material(
+      color:
+      Colors.transparent,
+
+      child: InkWell(
+        onTap:
+        onTap,
+
+        child: Center(
+          child: Column(
+            mainAxisSize:
+            MainAxisSize.min,
+
+            children: [
+              // ================================================
+              // ICON
+              // ================================================
+
+              AnimatedContainer(
+                duration:
+                const Duration(
+                  milliseconds: 180,
+                ),
+
+                curve:
+                Curves.easeOut,
+
+                width:
+                selected
+                    ? 45
+                    : 38,
+
+                height: 30,
+
+                decoration:
+                BoxDecoration(
+                  color:
+                  selected
+                      ? _brandRed.withOpacity(
+                    0.10,
+                  )
+                      : Colors.transparent,
+
+                  borderRadius:
+                  BorderRadius.circular(
+                    20,
+                  ),
+                ),
+
+                child: Icon(
+                  selected
+                      ? activeIcon
+                      : icon,
+
+                  size:
+                  selected
+                      ? 23
+                      : 22,
+
+                  color:
+                  selected
+                      ? _brandRed
+                      : _gray,
+                ),
+              ),
+
+              const SizedBox(
+                height: 3,
+              ),
+
+              // ================================================
+              // LABEL
+              // ================================================
+
+              AnimatedDefaultTextStyle(
+                duration:
+                const Duration(
+                  milliseconds: 180,
+                ),
+
+                curve:
+                Curves.easeOut,
+
+                style:
+                GoogleFonts.inter(
+                  fontSize: 11.5,
+
+                  height: 1,
+
+                  fontWeight:
+                  selected
+                      ? FontWeight.w700
+                      : FontWeight.w500,
+
+                  color:
+                  selected
+                      ? _brandRed
+                      : _gray,
+                ),
+
+                child:
+                Text(
+                  label,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ================================================================
+// INITIAL NATIVE LOADING VIEW
+// ================================================================
+
+class _NativeLoadingView
+    extends StatelessWidget {
   const _NativeLoadingView();
 
   @override
