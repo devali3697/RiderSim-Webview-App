@@ -1,4 +1,4 @@
-package com.example.ridersim_webview_app
+package com.ridersim.rider
 
 import io.flutter.embedding.android.FlutterActivity
 
