@@ -55,7 +55,7 @@ class AppUpdateService {
    */
 
   static const String _androidPackageName =
-      'com.example.ridersim_webview_app';
+      'com.ridersim.rider';
 
   static const String _iosAppStoreId =
       '';
